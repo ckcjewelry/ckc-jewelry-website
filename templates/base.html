@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}CKC Jewelry Zambia{% endblock %}</title>
+
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+<style>
+/* ===============================
+   VARIABLES & RESET
+================================ */
+:root {
+    --black: #000;
+    --dark: #0e0e0e;
+    --gold: #c9a24d;
+    --gold-soft: rgba(201,162,77,0.6);
+    --white: #fff;
+    --muted: #aaa;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background: var(--black);
+    color: var(--white);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+a {
+    text-decoration: none;
+    color: inherit;
+}
+
+/* ===============================
+   HEADER & NAVIGATION
+================================ */
+header {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    z-index: 1000;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(201,162,77,0.15);
+}
+
+.nav-container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.logo {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    letter-spacing: 1px;
+    color: var(--gold);
+}
+
+/* Desktop nav */
+.nav-close {
+    display: none;
+}
+
+.mobile-nav {
+    margin-left: auto;
+}
+
+.mobile-nav ul {
+    list-style: none;
+    display: flex;
+    gap: 32px;
+}
+
+.mobile-nav ul li a {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    position: relative;
+}
+
+.mobile-nav ul li a::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -6px;
+    width: 0;
+    height: 1px;
+    background: var(--gold);
+    transition: width 0.3s ease;
+}
+
+.mobile-nav ul li a:hover::after {
+    width: 100%;
+}
+
+/* Hamburger */
+.menu-toggle {
+    display: none;
+    font-size: 22px;
+    color: var(--gold);
+    cursor: pointer;
+}
+
+/* ===============================
+   SLIDE-IN MOBILE MENU
+================================ */
+@media (max-width: 768px) {
+    .menu-toggle {
+        display: block;
+    }
+
+    .mobile-nav {
+        position: fixed;
+        top: 0;
+        right: -100%;
+        width: 75%;
+        max-width: 320px;
+        height: 100vh;
+        background: var(--black);
+        z-index: 3000;
+        transition: right 0.4s ease;
+        padding-top: 90px;
+        border-left: 1px solid rgba(201,162,77,0.2);
+    }
+
+    .mobile-nav.active {
+        right: 0;
+    }
+
+    .mobile-nav.active .nav-close {
+        display: block;
+    }
+
+    .mobile-nav ul {
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .mobile-nav ul li {
+        border-bottom: 1px solid rgba(201,162,77,0.1);
+    }
+
+    .mobile-nav ul li a {
+        display: block;
+        padding: 18px 24px;
+    }
+
+    .nav-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.6);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.4s ease;
+        z-index: 2500;
+    }
+
+    .nav-overlay.active {
+        opacity: 1;
+        pointer-events: all;
+    }
+}
+
+/* Close arrow inside mobile nav */
+.nav-close {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    font-size: 20px;
+    color: var(--gold);
+    cursor: pointer;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.nav-close:hover {
+    transform: translateX(4px);
+    opacity: 0.8;
+}
+
+
+
+
+/* ===============================
+   MAIN CONTENT
+================================ */
+
+
+/* ===============================
+   FOOTER
+================================ */
+footer {
+    background: var(--dark);
+    border-top: 1px solid rgba(201,162,77,0.15);
+    padding: 40px 24px;
+}
+
+.footer-container {
+    max-width: 1200px;
+    margin: auto;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 24px;
+    align-items: center;
+}
+
+.footer-brand {
+    font-family: 'Inter', sans-serif;
+    color: var(--gold);
+    font-size: 18px;
+}
+
+.footer-socials {
+    display: flex;
+    gap: 18px;
+}
+
+.footer-socials a {
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--gold-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--gold);
+    transition: all 0.3s ease;
+}
+
+.footer-socials a:hover {
+    background: var(--gold);
+    color: var(--black);
+}
+
+.footer-copy {
+    margin-top: 20px;
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+}
+
+
+
+
+
+/* ===============================
+   FLOATING CART
+================================ */
+.floating-cart {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    background: #000;
+    border: 1px solid rgba(201,162,77,0.6);
+    color: #fff;
+    padding: 14px 16px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 9999;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    transition: all 0.3s ease;
+}
+
+.floating-cart:hover {
+    background: var(--gold);
+    color: #000;
+}
+
+.cart-icon {
+    position: relative;
+    font-size: 20px;
+}
+
+.cart-count {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    background: var(--gold);
+    color: #000;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 50%;
+}
+
+.cart-summary {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+
+.cart-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.8;
+}
+
+.cart-total {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* Cart mobile */
+@media (max-width: 768px) {
+    .cart-summary {
+        display: none;
+    }
+}
+</style>
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<header>
+    <div class="nav-container">
+        <div class="logo">CKC Jewelry</div>
+
+        <nav class="mobile-nav">
+            <!-- Close arrow -->
+            <div class="nav-close" onclick="toggleMenu()">
+                <i class="fas fa-arrow-right"></i>
+            </div>
+
+            <ul id="navLinks">
+                <li><a href="{{ url_for('home') }}">Home</a></li>
+                <li><a href="{{ url_for('reviews') }}">Reviews</a></li>
+                <li><a href="{{ url_for('contact') }}">Contact</a></li>
+            </ul>
+        </nav>
+
+
+        <div class="menu-toggle" onclick="toggleMenu()">
+            <i class="fas fa-bars"></i>
+        </div>
+
+        <!-- Overlay -->
+        <div class="nav-overlay" onclick="toggleMenu()"></div>
+    </div>
+</header>
+
+<main>
+    {% block content %}{% endblock %}
+</main>
+
+<footer>
+    <div class="footer-container">
+        <div class="footer-brand">
+            CKC Jewelry Zambia
+        </div>
+
+        <div class="footer-socials">
+            <a href="https://www.instagram.com/ckcjewelryzambia/?hl=en" target="_blank">
+                <i class="fab fa-instagram"></i>
+            </a>
+            <a href="https://web.facebook.com/Ckcjewerlyzambia" target="_blank">
+                <i class="fab fa-facebook-f"></i>
+            </a>
+        </div>
+    </div>
+
+    <div class="footer-copy">
+        © {{ current_year }} CKC Jewelry Zambia · Powered by InXource
+    </div>
+</footer>
+
+<!-- Floating Cart -->
+{% if not hide_cart %}
+<a href="{{ url_for('checkout') }}" class="floating-cart">
+
+    <div class="cart-icon">
+        <i class="fas fa-shopping-bag"></i>
+
+        <!-- cart-count must ALWAYS exist -->
+        <span class="cart-count"
+              style="display: {% if number_of_items > 0 %}inline-block{% else %}none{% endif %};">
+            {{ number_of_items or 0 }}
+        </span>
+    </div>
+
+    <div class="cart-summary">
+        <span class="cart-label">Cart Total</span>
+        <span class="cart-total">
+            ZMW {{ "%.2f"|format(accumulated_total or 0) }}
+        </span>
+    </div>
+
+</a>
+{% endif %}
+
+
+
+<script>
+function toggleMenu() {
+    const nav = document.querySelector(".mobile-nav");
+    const overlay = document.querySelector(".nav-overlay");
+
+    nav.classList.toggle("active");
+    overlay.classList.toggle("active");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    document.addEventListener("click", async (e) => {
+        const button = e.target.closest(".buy-now-btn");
+        if (!button) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Prevent double click
+        if (button.dataset.loading === "1") return;
+        button.dataset.loading = "1";
+
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "Adding...";
+
+        const product = {
+            id: button.dataset.id,
+            name: button.dataset.name,
+            price: button.dataset.price,
+            image: button.dataset.image
+        };
+
+        try {
+            const response = await fetch("/add-to-cart", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(product)
+            });
+
+            const contentType = response.headers.get("content-type") || "";
+            let data = {};
+
+            if (contentType.includes("application/json")) {
+                data = await response.json();
+            } else {
+                data.success = response.ok;
+            }
+
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || "Add to cart failed");
+            }
+
+            /* Update cart count */
+            const cartCount = document.querySelector(".cart-count");
+            if (cartCount && data.number_of_items !== undefined) {
+                cartCount.textContent = data.number_of_items;
+                cartCount.style.display = "inline-block";
+            }
+
+            /* Update cart total */
+            const cartTotal = document.querySelector(".cart-total");
+            if (cartTotal && data.accumulated_total !== undefined) {
+                cartTotal.textContent =
+                    "ZMW " + Number(data.accumulated_total).toFixed(2);
+            }
+
+            /* Visual feedback */
+            button.textContent = "Added ✓";
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 1200);
+
+        } catch (error) {
+            console.error("Error adding to cart:", error);
+            alert("Failed to add item to cart. Please try again.");
+        } finally {
+            button.dataset.loading = "0";
+            button.disabled = false;
+        }
+    });
+
+});
+</script>
+
+
+
+</body>
+</html>

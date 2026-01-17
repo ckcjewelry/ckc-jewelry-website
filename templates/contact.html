@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block title %}Contact · CKC Jewelry Zambia{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ===============================
+   CONTACT PAGE
+================================ */
+
+.contact {
+    padding: 80px 20px;
+    max-width: 1000px;
+    margin: auto;
+}
+
+/* Heading */
+.contact-header {
+    text-align: center;
+    margin-bottom: 60px;
+}
+
+.contact-header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2rem, 4vw, 3rem);
+    color: var(--gold);
+    margin-bottom: 10px;
+}
+
+.contact-header p {
+    color: #ccc;
+    max-width: 500px;
+    margin: auto;
+    font-size: 0.95rem;
+}
+
+/* Cards */
+.contact-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 25px;
+}
+
+.contact-card {
+    background: #0e0e0e;
+    border: 1px solid rgba(201,162,77,0.15);
+    border-radius: 16px;
+    padding: 35px 25px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.contact-card:hover {
+    transform: translateY(-6px);
+    border-color: var(--gold);
+}
+
+/* Icons */
+.contact-icon {
+    font-size: 28px;
+    color: var(--gold);
+    margin-bottom: 15px;
+}
+
+/* Text */
+.contact-card h3 {
+    color: #fff;
+    margin-bottom: 8px;
+    font-size: 1.1rem;
+}
+
+.contact-card p,
+.contact-card a {
+    color: #bbb;
+    font-size: 0.9rem;
+    text-decoration: none;
+}
+
+.contact-card a:hover {
+    color: var(--gold);
+}
+
+/* Social buttons */
+.social-links {
+    display: flex;
+    justify-content: center;
+    gap: 18px;
+    margin-top: 12px;
+}
+
+.social-links a {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #000;
+    border: 1px solid rgba(201,162,77,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--gold);
+    font-size: 18px;
+    transition: all 0.3s ease;
+}
+
+.social-links a:hover {
+    background: var(--gold);
+    color: #000;
+}
+
+.contact-card {
+    cursor: pointer;
+}
+
+
+/* Mobile spacing */
+@media (max-width: 600px) {
+    .contact {
+        padding: 60px 15px;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="contact">
+
+    <!-- Header -->
+    <div class="contact-header">
+        <h1>Get in Touch</h1>
+        <p>
+            We’re always happy to help. Reach out to CKC Jewelry Zambia
+            for inquiries, custom pieces, or collaborations.
+        </p>
+    </div>
+
+    <!-- Contact Cards -->
+    <div class="contact-grid">
+
+        <!-- Call / WhatsApp -->
+        <div class="contact-card">
+            <div class="contact-icon">
+                <i class="fas fa-phone"></i>
+            </div>
+            <h3>Call or WhatsApp</h3>
+            <p>Fast support & custom orders</p>
+
+            <div class="social-links">
+                <!-- Call -->
+                <a href="tel:+260971023074" aria-label="Call CKC Jewelry">
+                    <i class="fas fa-phone"></i>
+                </a>
+
+                <!-- WhatsApp -->
+                <a href="https://wa.me/260971023074" target="_blank" aria-label="WhatsApp CKC Jewelry">
+                    <i class="fab fa-whatsapp"></i>
+                </a>
+            </div>
+        </div>
+
+
+        <!-- Location -->
+        <a
+          href="https://maps.apple.com/?q=East+Park+Mall+Lusaka"
+          target="_blank"
+          class="contact-card"
+          style="text-decoration: none;"
+        >
+            <div class="contact-icon">
+                <i class="fas fa-location-dot"></i>
+            </div>
+            <h3>Visit Us</h3>
+            <p>East Park Mall</p>
+            <p>Opposite Woolworths</p>
+        </a>
+
+
+        <!-- Social -->
+        <div class="contact-card">
+            <div class="contact-icon">
+                <i class="fas fa-hashtag"></i>
+            </div>
+            <h3>Follow Us</h3>
+            <p>Stay updated with our latest pieces</p>
+
+            <div class="social-links">
+                <a href="https://web.facebook.com/Ckcjewerlyzambia" target="_blank" aria-label="Facebook">
+                    <i class="fab fa-facebook-f"></i>
+                </a>
+                <a href="https://www.instagram.com/ckcjewelryzambia/?hl=en" target="_blank" aria-label="Instagram">
+                    <i class="fab fa-instagram"></i>
+                </a>
+            </div>
+        </div>
+
+    </div>
+
+</section>
+{% endblock %}

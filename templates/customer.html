@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% set hide_cart = true %}
+
+{% block title %}Welcome · CKC Jewelry Zambia{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ===============================
+   NEW CUSTOMER PAGE
+================================ */
+.customer-page {
+    padding: 60px 20px;
+    max-width: 520px;
+    margin: auto;
+}
+
+.customer-box {
+    background: #0e0e0e;
+    border: 1px solid rgba(201,162,77,0.15);
+    border-radius: 16px;
+    padding: 28px;
+}
+
+/* Headings */
+.customer-box h2 {
+    font-family: 'Playfair Display', serif;
+    color: var(--gold);
+    font-size: 26px;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.customer-box p {
+    font-size: 14px;
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 26px;
+    line-height: 1.6;
+}
+
+/* Form */
+.customer-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.customer-form label {
+    font-size: 13px;
+    color: var(--muted);
+}
+
+/* Inputs */
+.customer-form input,
+.customer-form select {
+    width: 100%;
+    background: #000;
+    border: 1px solid rgba(201,162,77,0.3);
+    color: #fff;
+    padding: 14px;
+    font-size: 14px;
+    border-radius: 10px;
+}
+
+.customer-form input::placeholder {
+    color: #777;
+}
+
+/* Button */
+.customer-btn {
+    margin-top: 10px;
+    padding: 16px;
+    background: var(--gold);
+    color: #000;
+    font-weight: 600;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.customer-btn:hover {
+    background: #fff;
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+    .customer-box {
+        padding: 22px;
+    }
+
+    .customer-box h2 {
+        font-size: 24px;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<section class="customer-page">
+    <div class="customer-box">
+
+        <h2>Welcome ✨</h2>
+
+        <p>
+            We noticed this is your first time shopping with CKC Jewelry.
+            We just want to get to know you a little better so we can recognise you
+            in future and offer you special deals and personalised service.
+            <br><br>
+            This information is collected <strong>only once</strong>.
+        </p>
+
+        <form class="customer-form" method="POST" action="#">
+
+            <div>
+                <label>Full Name</label>
+                <input type="text" name="name" placeholder="Your full name" required>
+            </div>
+
+            <div>
+                <label>Email Address</label>
+                <input type="email" name="email" placeholder="you@example.com" required>
+            </div>
+
+            <div>
+                <label>Location</label>
+                <input type="text" name="location" placeholder="e.g. Lusaka, Kitwe" required>
+            </div>
+
+            <div>
+                <label>Gender</label>
+                <select name="gender" required>
+                    <option value="" disabled selected>Select gender</option>
+                    <option value="female">Female</option>
+                    <option value="male">Male</option>
+                    <option value="prefer_not_to_say">Prefer not to say</option>
+                </select>
+            </div>
+
+            <button type="submit" class="customer-btn">
+                Continue to Payment
+            </button>
+
+        </form>
+
+    </div>
+</section>
+
+{% endblock %}

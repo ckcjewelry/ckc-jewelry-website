@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+
+{% set hide_cart = true %}
+
+{% block title %}Checkout · CKC Jewelry Zambia{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ===============================
+   CHECKOUT
+================================ */
+.checkout {
+    padding: 40px 20px;
+    max-width: 1100px;
+    margin: auto;
+}
+
+.checkout h2 {
+    font-family: 'Playfair Display', serif;
+    color: var(--gold);
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+/* Layout */
+.checkout-grid {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    gap: 30px;
+}
+
+/* Cart Items */
+.cart-box {
+    background: #0e0e0e;
+    border: 1px solid rgba(201,162,77,0.15);
+    border-radius: 14px;
+    padding: 20px;
+}
+
+.cart-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 14px;
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid rgba(201,162,77,0.1);
+}
+
+.cart-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.cart-item img {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.item-details h4 {
+    font-size: 14px;
+    font-weight: 400;
+}
+
+.item-price {
+    color: var(--gold);
+    font-weight: 600;
+    margin: 6px 0;
+}
+
+/* Quantity Control */
+.quantity-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0 14px;
+}
+
+.qty-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid rgba(201,162,77,0.4);
+    background: #000;
+    color: var(--gold);
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.qty-btn:hover {
+    background: var(--gold);
+    color: #000;
+}
+
+.qty-input {
+    width: 50px;
+    height: 32px;
+    text-align: center;
+    background: #000;
+    border: 1px solid rgba(201,162,77,0.4);
+    color: #fff;
+    border-radius: 6px;
+}
+
+/* Inputs */
+.item-details textarea,
+.item-details input[type="file"],
+.address-box textarea {
+    width: 100%;
+    background: #000;
+    border: 1px solid rgba(201,162,77,0.3);
+    color: #fff;
+    padding: 10px;
+    font-size: 13px;
+    border-radius: 8px;
+}
+
+.item-details textarea {
+    resize: vertical;
+    min-height: 60px;
+}
+
+/* Remove item button */
+.remove-item {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.7);
+    color: var(--gold);
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* Address */
+.address-box {
+    margin-top: 30px;
+}
+
+.address-box h3 {
+    font-size: 15px;
+    margin-bottom: 10px;
+    color: var(--gold);
+}
+
+.address-box input[type="tel"] {
+    width: 100%;
+    background: #000;
+    border: 1px solid rgba(201,162,77,0.3);
+    color: #fff;
+    padding: 12px;
+    border-radius: 8px;
+}
+
+/* Summary */
+.summary-box {
+    background: #0e0e0e;
+    border: 1px solid rgba(201,162,77,0.15);
+    border-radius: 14px;
+    padding: 20px;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.summary-total {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--gold);
+    border-top: 1px solid rgba(201,162,77,0.2);
+    padding-top: 14px;
+}
+
+.pay-btn {
+    width: 100%;
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--gold);
+    color: #000;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+@media (max-width: 900px) {
+    .checkout-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<section class="checkout">
+<h2>Checkout</h2>
+
+<form method="POST" action="{{ url_for('pay_now') }}" enctype="multipart/form-data">
+<div class="checkout-grid">
+
+<!-- LEFT -->
+<div class="cart-box">
+
+{% for item in cart %}
+<div class="cart-item">
+    <button type="button" class="remove-item" data-product-id="{{ item.product_id }}">×</button>
+    <img src="{{ item.image }}" alt="{{ item.name }}">
+
+    <div class="item-details">
+        <h4>{{ item.name }}</h4>
+
+        <div class="item-price">
+            ZMW {{ "%.2f"|format(item.price) }}
+        </div>
+
+        <div class="quantity-control">
+            <button type="button" class="qty-btn">−</button>
+            <input
+                type="number"
+                value="{{ item.quantity }}"
+                min="1"
+                class="qty-input"
+                data-product-id="{{ item.product_id }}">
+            <button type="button" class="qty-btn">+</button>
+        </div>
+
+        <textarea
+            name="instruction_{{ item.product_id }}"
+            placeholder="Special instructions (optional)"></textarea>
+
+        <input
+            type="file"
+            name="image_{{ item.product_id }}"
+            accept="image/*">
+    </div>
+</div>
+{% endfor %}
+
+<div class="address-box">
+    <h3>Delivery Address</h3>
+    <textarea name="delivery_location" required></textarea>
+</div>
+
+<div class="address-box">
+    <h3>Contact Phone Number</h3>
+    <input type="tel" name="phone" required>
+</div>
+
+</div>
+
+<!-- RIGHT -->
+<div class="summary-box">
+    <div class="summary-row">
+        <span>Items ({{ cart_count }})</span>
+        <span class="summary-subtotal">
+            ZMW {{ "%.2f"|format(cart_total) }}
+        </span>
+    </div>
+
+    <div class="summary-row summary-total">
+        <span>Total</span>
+        <span class="summary-total-amount">
+            ZMW {{ "%.2f"|format(cart_total) }}
+        </span>
+    </div>
+
+    <button type="submit" class="pay-btn">Pay Now</button>
+</div>
+
+</div>
+</form>
+</section>
+
+<script>
+/* =====================================================
+   CHECKOUT INTERACTIONS
+   - Remove item
+   - Update quantity (+ / − / input)
+===================================================== */
+
+document.addEventListener("click", async (e) => {
+
+    /* ===============================
+       REMOVE ITEM (X BUTTON)
+    ================================ */
+    const removeBtn = e.target.closest(".remove-item");
+    if (removeBtn) {
+        e.preventDefault();
+
+        const productId = removeBtn.dataset.productId;
+        const cartItem = removeBtn.closest(".cart-item");
+
+        if (!productId || !cartItem) return;
+
+        try {
+            const response = await fetch("/remove-from-cart", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ product_id: productId })
+            });
+
+            const data = await response.json();
+            if (!data.success) throw new Error(data.message);
+
+            /* Remove item from UI */
+            cartItem.remove();
+
+            updateSummary(data);
+
+            /* Empty cart state */
+            if (data.number_of_items === 0) {
+                document.querySelector(".cart-box").innerHTML =
+                    "<p>Your cart is empty.</p>";
+            }
+
+        } catch (error) {
+            console.error("Remove item error:", error);
+            alert("Failed to remove item. Please try again.");
+        }
+
+        return;
+    }
+
+    /* ===============================
+       QUANTITY BUTTONS (+ / −)
+    ================================ */
+    const qtyBtn = e.target.closest(".qty-btn");
+    if (qtyBtn) {
+        const cartItem = qtyBtn.closest(".cart-item");
+        const input = cartItem.querySelector(".qty-input");
+
+        let quantity = parseInt(input.value, 10) || 1;
+
+        if (qtyBtn.textContent.trim() === "−") {
+            quantity = Math.max(1, quantity - 1);
+        } else {
+            quantity += 1;
+        }
+
+        input.value = quantity;
+        await sendQuantityUpdate(input.dataset.productId, quantity);
+    }
+});
+
+/* ===============================
+   MANUAL QUANTITY INPUT
+================================ */
+document.addEventListener("change", async (e) => {
+    const input = e.target.closest(".qty-input");
+    if (!input) return;
+
+    let quantity = parseInt(input.value, 10);
+
+    if (!quantity || quantity < 1) {
+        quantity = 1;
+        input.value = 1;
+    }
+
+    await sendQuantityUpdate(input.dataset.productId, quantity);
+});
+
+/* ===============================
+   SEND QUANTITY UPDATE
+================================ */
+async function sendQuantityUpdate(productId, quantity) {
+    try {
+        const response = await fetch("/update-quantity", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                product_id: productId,
+                quantity: quantity
+            })
+        });
+
+        const data = await response.json();
+        if (!data.success) throw new Error(data.message);
+
+        updateSummary(data);
+
+    } catch (error) {
+        console.error("Quantity update error:", error);
+        alert("Failed to update quantity. Please try again.");
+    }
+}
+
+/* ===============================
+   UPDATE SUMMARY TOTALS
+================================ */
+function updateSummary(data) {
+
+    /* Item count */
+    const itemsLabel = document.querySelector(".summary-row span");
+    if (itemsLabel && data.number_of_items !== undefined) {
+        itemsLabel.textContent = `Items (${data.number_of_items})`;
+    }
+
+    /* Subtotal & total */
+    const subtotal = document.querySelector(".summary-subtotal");
+    const total = document.querySelector(".summary-total-amount");
+
+    if (subtotal) {
+        subtotal.textContent =
+            "ZMW " + Number(data.accumulated_total).toFixed(2);
+    }
+
+    if (total) {
+        total.textContent =
+            "ZMW " + Number(data.accumulated_total).toFixed(2);
+    }
+}
+</script>
+
+
+
+{% endblock %}

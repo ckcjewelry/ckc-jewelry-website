@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% set hide_cart = true %}
+
+{% block title %}Payment Successful · CKC Jewelry Zambia{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ===============================
+   PAYMENT SUCCESS PAGE
+================================ */
+.paid-page {
+    padding: 80px 20px;
+    max-width: 520px;
+    margin: auto;
+}
+
+.paid-box {
+    background: #0e0e0e;
+    border: 1px solid rgba(201,162,77,0.15);
+    border-radius: 18px;
+    padding: 36px;
+    text-align: center;
+}
+
+/* Icon */
+.paid-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(201,162,77,0.15);
+    color: var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin: 0 auto 20px;
+}
+
+/* Headings */
+.paid-box h2 {
+    font-family: 'Playfair Display', serif;
+    color: var(--gold);
+    font-size: 26px;
+    margin-bottom: 10px;
+}
+
+.paid-box p {
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-bottom: 28px;
+}
+
+/* Button */
+.continue-btn {
+    display: inline-block;
+    padding: 14px 34px;
+    background: var(--gold);
+    color: #000;
+    font-weight: 600;
+    border-radius: 12px;
+    font-size: 14px;
+    transition: background 0.3s ease;
+}
+
+.continue-btn:hover {
+    background: #fff;
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+    .paid-box {
+        padding: 28px;
+    }
+
+    .paid-box h2 {
+        font-size: 24px;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<section class="paid-page">
+    <div class="paid-box">
+
+        <div class="paid-icon">
+            <i class="fas fa-check"></i>
+        </div>
+
+        <h2>Payment Successful</h2>
+
+        <p>
+            Thank you for your purchase.
+            Your payment has been received successfully and your order is now being processed.
+            We’ll contact you if we need any additional details.
+        </p>
+
+        <a href="{{ url_for('home') }}" class="continue-btn">
+            Continue Shopping
+        </a>
+
+    </div>
+</section>
+
+{% endblock %}
