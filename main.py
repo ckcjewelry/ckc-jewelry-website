@@ -8,6 +8,8 @@ from cart import Cart
 from products import Products
 from checkout import Checkout
 from pay import Pay
+from inventory import Inventory
+
 
 cart = Cart()
 
@@ -42,25 +44,43 @@ def add_to_cart():
     session.pop("order_id", None)
 
     data = request.json
+    product_id = data["id"]
+
+    inventory = Inventory()
+    available = inventory.get_available_stock(product_id)
+
+    if available < 1:
+        return jsonify({
+            "success": False,
+            "message": "Out of stock"
+        }), 400
 
     result = cart.add_to_cart(
-        product_id=data["id"],
+        product_id=product_id,
         name=data["name"],
         price=data["price"],
         image=data["image"]
     )
 
+    result["success"] = True
+    result["available_stock"] = available
     return jsonify(result)
+
+
 
 
 @app.route("/checkout")
 def checkout():
+    stock_error = session.pop("stock_error", None)
+
     return render_template(
         "checkout.html",
         cart=cart.items,
         cart_count=len(cart.items),
-        cart_total=cart.accumulated_total
+        cart_total=cart.accumulated_total,
+        stock_error=stock_error
     )
+
 
 
 @app.route("/update-quantity", methods=["POST"])
@@ -264,6 +284,28 @@ def process_payment():
         total_amount = cart.accumulated_total
 
         # -------------------------------
+        # STOCK CHECK (BEFORE PAYMENT)
+        # -------------------------------
+        inventory = Inventory()
+        insufficient = []
+
+        for item in cart.items:
+            product_id = item["product_id"]
+            requested_qty = int(item.get("quantity") or 1)
+            available = inventory.get_available_stock(product_id)
+
+            if available < requested_qty:
+                insufficient.append({
+                    "product_id": product_id,
+                    "requested": requested_qty,
+                    "available": available
+                })
+
+        if insufficient:
+            session["stock_error"] = insufficient
+            return redirect(url_for("checkout"))
+
+        # -------------------------------
         # 2. GET PAYMENT TOKEN FIRST
         # -------------------------------
         payment = pay_tool.process_payment(
@@ -271,6 +313,7 @@ def process_payment():
             phone=phone,
             amount=total_amount
         )
+        print("DEBUG process-payment payment response:", payment)
 
         token = payment["token"]
         payment_link = payment["payment_link"]
@@ -396,6 +439,33 @@ def check_payment_status():
         return redirect(url_for("paid"))
 
     return redirect(url_for("payout"))
+
+@app.route("/payment/status/<order_number>")
+def payment_status(order_number):
+    """
+    TechPay redirects here after payment.
+    Example:
+    /payment/status/329264?token=C6C19B25&status=COMPLETE
+    """
+    token = request.args.get("token")
+    status = request.args.get("status")
+
+    print("PAYMENT RETURN HIT:", {"order_number": order_number, "token": token, "status": status})
+
+    # Only mark paid if TechPay says it's complete/success
+    if token and status and status.upper() in ("COMPLETE", "SUCCESS", "PAID"):
+        pay_tool = Pay()
+        updated_order = pay_tool.mark_order_paid(token)  # updates by orderToken :contentReference[oaicite:1]{index=1}
+        print("PAYMENT UPDATE RESULT:", updated_order)
+
+        # If update worked, show paid page
+        if updated_order:
+            session["order_id"] = updated_order["id"]  # so /paid can work :contentReference[oaicite:2]{index=2}
+            return redirect(url_for("paid"))
+
+    # If failed / cancelled, go back to payout
+    return redirect(url_for("payout"))
+
 
 
 

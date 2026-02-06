@@ -9,6 +9,9 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 import os
 
+from inventory import Inventory
+
+
 # Load environment variables
 load_dotenv()
 
@@ -189,33 +192,128 @@ class Pay:
             print("Payment notification error:", e)
             return None
 
-    def mark_order_paid(self, order_token):
+    def mark_order_paid(self, order_token, amount_paid):
+        print("\n====== mark_order_paid START ======")
+        print("order_token:", order_token)
+        print("amount_paid (from checkout/session):", amount_paid)
+
         try:
+            # 1️⃣ Fetch order first (idempotency check)
+            print("Fetching order from DB...")
+            existing_resp = (
+                self.supabase
+                .table("orders")
+                .select(
+                    "id,business_id,customer_id,total_amount,"
+                    "created_at,order_payment_status,products,partialAmountTotal"
+                )
+                .eq("orderToken", order_token)
+                .single()
+                .execute()
+            )
+
+            if existing_resp is None:
+                print("❌ existing_resp is None")
+                return None
+
+            order = existing_resp.data
+            print("Order fetched:", order)
+
+            if not order:
+                print("❌ Order not found for token:", order_token)
+                return None
+
+            print(
+                "BEFORE UPDATE ->",
+                "payment_status:", order.get("order_payment_status"),
+                "total_amount:", order.get("total_amount"),
+                "partialAmountTotal:", order.get("partialAmountTotal"),
+            )
+
+            # 2️⃣ If already completed, exit (idempotency)
+            if (order.get("order_payment_status") or "").lower() == "completed":
+                print("⚠️ Order already marked as completed. Skipping update.")
+                print("Existing partialAmountTotal:", order.get("partialAmountTotal"))
+                return order
+
+            # 3️⃣ Decide what amount to save
+            paid_amount = amount_paid if amount_paid is not None else order.get("total_amount")
+            print("Paid amount that will be saved:", paid_amount)
+
+            # 4️⃣ Update order: mark paid + save partialAmountTotal
+            print("Updating order: setting payment_status=completed and partialAmountTotal...")
             response = (
                 self.supabase
                 .table("orders")
                 .update({
                     "order_payment_status": "completed",
-                    "order_status": "confirmed"
+                    "order_status": "confirmed",
+                    "partialAmountTotal": paid_amount
                 })
                 .eq("orderToken", order_token)
-                .select()
+                .select(
+                    "id,business_id,customer_id,total_amount,"
+                    "created_at,order_payment_status,products,partialAmountTotal"
+                )
                 .single()
                 .execute()
             )
 
-            order = response.data
-            if not order:
+            if response is None:
+                print("❌ Update response is None")
                 return None
 
+            order = response.data
+            print("Order AFTER UPDATE:", order)
+
+            if not order:
+                print("❌ Update returned no order data")
+                return None
+
+            print(
+                "AFTER UPDATE ->",
+                "payment_status:", order.get("order_payment_status"),
+                "total_amount:", order.get("total_amount"),
+                "partialAmountTotal:", order.get("partialAmountTotal"),
+            )
+
+            # 5️⃣ Reduce stock
+            print("Starting stock deduction...")
+            inventory = Inventory()
+            products = order.get("products") or []
+
+            try:
+                for item in products:
+                    product_id = item.get("product_id")
+                    qty = int(item.get("quantity") or 1)
+                    print(f"Reducing stock | product_id={product_id}, qty={qty}")
+
+                    if product_id:
+                        new_qty = inventory.decrement_stock(product_id, qty)
+                        print(f"Stock updated successfully. New quantity={new_qty}")
+
+            except Exception as stock_err:
+                print("❌ Stock deduction failed:", stock_err)
+
+                print("Flagging order as stock_issue...")
+                self.supabase.table("orders").update({
+                    "order_status": "stock_issue"
+                }).eq("orderToken", order_token).execute()
+
+                return order  # Paid but needs manual review
+
+            # 6️⃣ Continue normal flow
+            print("Sending notifications, receipt, and email...")
             self.notify_business_payment_received(order["id"])
             self.create_receipt(order)
             self.send_receipt_email(order)
 
+            print("====== mark_order_paid END (SUCCESS) ======\n")
             return order
 
         except Exception as e:
-            print("Failed to mark order paid:", e)
+            print("❌ mark_order_paid FAILED with exception:", e)
+            print("====== mark_order_paid END (ERROR) ======\n")
             return None
 
     def create_receipt(self, order):
