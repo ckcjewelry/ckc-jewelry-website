@@ -9,6 +9,7 @@ from products import Products
 from checkout import Checkout
 from pay import Pay
 from inventory import Inventory
+import uuid
 
 
 cart = Cart()
@@ -282,6 +283,8 @@ def process_payment():
         # 1. CALCULATE TOTAL
         # -------------------------------
         total_amount = cart.accumulated_total
+        session["total_amount"] = total_amount
+        print("DEBUG total_amount calculated:", total_amount)
 
         # -------------------------------
         # STOCK CHECK (BEFORE PAYMENT)
@@ -303,35 +306,54 @@ def process_payment():
 
         if insufficient:
             session["stock_error"] = insufficient
+            print("DEBUG stock insufficient:", insufficient)
             return redirect(url_for("checkout"))
 
         # -------------------------------
-        # 2. GET PAYMENT TOKEN FIRST
+        # 2. TRY TECHPAY TOKEN FIRST (WITH FALLBACK)
         # -------------------------------
-        payment = pay_tool.process_payment(
-            order_id="TEMP",
-            phone=phone,
-            amount=total_amount
-        )
-        print("DEBUG process-payment payment response:", payment)
+        payment_link = None
+        token = None
+        fallback_to_store = False
 
-        token = payment["token"]
-        payment_link = payment["payment_link"]
+        try:
+            payment = pay_tool.process_payment(
+                order_id="TEMP",
+                phone=phone,
+                amount=total_amount
+            )
+            print("DEBUG process-payment payment response:", payment)
+
+            token = payment.get("token")
+            payment_link = payment.get("payment_link")
+
+            if not token or not payment_link:
+                raise Exception(f"TechPay response missing token/payment_link: {payment}")
+
+
+        except Exception as e:
+            # TechPay down → fallback to pending pay-at-store order
+            print("TechPay failed, falling back to pay-at-store:", e)
+            fallback_to_store = True
+            token = f"STORE-{uuid.uuid4().hex[:10].upper()}"  # local token for tracking
 
         # -------------------------------
         # 3. CREATE ORDER (NO PRODUCTS YET)
+        # partialAmountTotal = total_amount
         # -------------------------------
         order = checkout.create_order(
             customer_id=customer_id,
             delivery_location=delivery_location,
             total_amount=total_amount,
-            order_token=token
+            order_token=token,
+            partial_amount_total=total_amount
         )
 
         if not order:
             return redirect(url_for("checkout"))
 
         order_id = order["id"]
+        print("DEBUG created order_id:", order_id)
 
         # -------------------------------
         # 4. PREPARE PRODUCTS (TS SHAPE)
@@ -393,12 +415,101 @@ def process_payment():
         cart.accumulated_total = 0
 
         # -------------------------------
-        # 9. REDIRECT TO PAYMENT
+        # 9. REDIRECT
         # -------------------------------
+        if fallback_to_store:
+            # TechPay failed → order saved as pending, customer pays at store
+            return redirect(url_for("pay_at_store_success"))
+
+
+        # TechPay OK → send them to payment link
         return redirect(payment_link)
 
     except Exception as e:
         print("Payment processing error:", e)
+        return redirect(url_for("payout"))
+
+
+
+@app.route("/place-order-pay-at-store", methods=["POST"])
+def place_order_pay_at_store():
+    # Guards (same vibe as /process-payment)
+    if not session.get("customer_id") or not session.get("checkout_phone"):
+        return redirect(url_for("checkout"))
+
+    if not cart.items:
+        return redirect(url_for("checkout"))
+
+    checkout = Checkout()
+
+    try:
+        customer_id = session["customer_id"]
+        delivery_location = session.get("delivery_location", "")
+        total_amount = cart.accumulated_total
+
+        # Create a token that is NOT TechPay-based (so you can still find the order)
+        store_token = f"STORE-{uuid.uuid4().hex[:10].upper()}"
+
+        # 1) Create order (payment status stays "pending" because create_order sets it)
+        order = checkout.create_order(
+            customer_id=customer_id,
+            delivery_location=delivery_location,
+            total_amount=total_amount,
+            order_token=store_token,
+            partial_amount_total=total_amount
+        )
+
+        if not order:
+            return redirect(url_for("payout"))
+
+        order_id = order["id"]
+
+        # 2) Prepare products (same as your /process-payment flow)
+        products_for_notification = []
+        cart_items = []
+
+        for item in cart.items:
+            products_for_notification.append({
+                "product_id": item["product_id"],
+                "name": item["name"],
+                "price": item["price"],
+                "quantity": item["quantity"],
+                "specialInstructions": item.get("instruction"),
+            })
+
+            cart_items.append({
+                "product_id": item["product_id"],
+                "quantity": item["quantity"],
+                "specialInstructions": item.get("instruction"),
+                "local_image_path": item.get("local_image_path")
+            })
+
+        # 3) Create notification (you already do this)
+        checkout.create_order_notification(
+            user_id=customer_id,
+            business_id=checkout.business_id,
+            order_id=order_id,
+            products=products_for_notification,
+            ordered_at=order["created_at"]
+        )
+
+        # 4) Upload images + attach products JSON
+        products_json = checkout.upload_order_images(order_id=order_id, cart_items=cart_items)
+        checkout.attach_products_to_order(order_id=order_id, products_json=products_json)
+
+        # 5) Save order id (optional)
+        session["order_id"] = order_id
+
+        # 6) Clear cart (important so they don’t re-submit)
+        cart.items = []
+        cart.accumulated_total = 0
+
+        # For now, redirect to paid page (next step we’ll make a proper “Order received / pay in store” page)
+        return redirect(url_for("pay_at_store_success"))
+
+
+    except Exception as e:
+        print("Pay-at-store order error:", e)
         return redirect(url_for("payout"))
 
 
@@ -484,6 +595,21 @@ def paid():
     session.pop("customer_id", None)
 
     return render_template('paid.html')
+
+
+@app.route('/pay-at-store-success')
+def pay_at_store_success():
+    order_id = session.get("order_id")
+    if not order_id:
+        return redirect(url_for("checkout"))
+
+    # Clean sensitive session data
+    session.pop("transaction_id", None)
+    session.pop("order_id", None)
+    session.pop("checkout_phone", None)
+    session.pop("customer_id", None)
+
+    return render_template('pay_at_store.html')
 
 
 

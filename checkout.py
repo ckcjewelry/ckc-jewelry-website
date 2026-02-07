@@ -128,18 +128,28 @@ class Checkout:
             print(f"Error fetching customer: {e}")
             return None
 
-    def create_order(self, customer_id, delivery_location, total_amount, order_token):
+    def create_order(self, customer_id, delivery_location, total_amount, order_token, partial_amount_total):
         """
         Creates an order row ONLY.
         - NO products
         - NO images
         - Products are attached later (React-aligned flow)
+
+        NEW:
+        - partialAmountTotal is set (defaults to total_amount if not provided)
         """
         try:
+            if partial_amount_total is None:
+                partial_amount_total = total_amount
+
             payload = {
                 "business_id": self.business_id,
                 "customer_id": customer_id,
+
+                # keep your existing behavior (string)
                 "total_amount": str(total_amount),
+                "partialAmountTotal": str(partial_amount_total),
+
                 "order_status": "pending",
                 "order_payment_status": "pending",
                 "orderToken": order_token,
@@ -147,12 +157,16 @@ class Checkout:
                 "products": []
             }
 
+            print("DEBUG create_order payload:", payload)
+
             response = (
                 self.supabase
                 .table("orders")
                 .insert(payload)
                 .execute()
             )
+
+            print("DEBUG create_order response:", response)
 
             if not response.data:
                 raise Exception("Order insert failed")

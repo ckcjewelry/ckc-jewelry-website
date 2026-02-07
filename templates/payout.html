@@ -156,6 +156,36 @@
         font-size: 30px;
     }
 }
+
+/* Secondary payment option */
+.alt-pay-btn {
+    width: 100%;
+    padding: 16px;
+    background: transparent;
+    color: var(--gold);
+    font-weight: 600;
+    border: 1px solid rgba(201,162,77,0.45);
+    border-radius: 14px;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 14px;
+    transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+.alt-pay-btn:hover {
+    background: rgba(201,162,77,0.12);
+    border-color: rgba(201,162,77,0.75);
+}
+
+@media (max-width: 480px) {
+
+    .alt-pay-btn {
+        padding: 15px;
+        font-size: 15px;
+        border-radius: 12px;
+    }
+}
+
 </style>
 {% endblock %}
 
@@ -165,8 +195,8 @@
 <div class="loader-overlay" id="paymentLoader">
     <div class="loader-box">
         <div class="spinner"></div>
-        <h3>Please wait</h3>
-        <p>
+        <h3 id="loaderTitle">Please wait</h3>
+        <p id="loaderMessage">
             We are securely transferring you to our payment partner to complete your purchase.
         </p>
 
@@ -208,6 +238,15 @@
             </button>
         </form>
 
+        <!-- PAY AT STORE -->
+        <form action="{{ url_for('place_order_pay_at_store') }}" method="POST" onsubmit="showStoreLoader()">
+            <button type="submit" class="alt-pay-btn">
+                Place Order &amp; Pay at the Store
+            </button>
+        </form>
+
+
+
         <div class="secure-text">
             Secure payment · You will receive confirmation after payment
         </div>
@@ -217,8 +256,19 @@
 
 <script>
 function showLoader() {
+    document.getElementById("loaderTitle").textContent = "Please wait";
+    document.getElementById("loaderMessage").textContent =
+        "We are securely transferring you to our payment partner to complete your purchase.";
+    document.getElementById("paymentLoader").style.display = "flex";
+}
+
+function showStoreLoader() {
+    document.getElementById("loaderTitle").textContent = "Placing your order";
+    document.getElementById("loaderMessage").textContent =
+        "We are saving your order. You will pay at the store.";
     document.getElementById("paymentLoader").style.display = "flex";
 }
 </script>
+
 
 {% endblock %}
