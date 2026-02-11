@@ -145,14 +145,11 @@ class Checkout:
             payload = {
                 "business_id": self.business_id,
                 "customer_id": customer_id,
-
-                # keep your existing behavior (string)
                 "total_amount": str(total_amount),
                 "partialAmountTotal": str(partial_amount_total),
-
                 "order_status": "pending",
                 "order_payment_status": "pending",
-                "orderToken": order_token,
+                "transaction_id": order_token,
                 "delivery_location": delivery_location,
                 "products": []
             }
@@ -362,6 +359,17 @@ class Checkout:
         except Exception as e:
             print("Failed to create order notification:", e)
             return False
+
+    def get_order_by_token(self, order_token):
+        try:
+            res = supabase.table("orders").select("*").eq("transaction_id", order_token).execute()
+            if res.data and len(res.data) > 0:
+                return res.data[0]
+            return None
+        except Exception as e:
+            print("get_order_by_token error:", e)
+            return None
+
 
 
 

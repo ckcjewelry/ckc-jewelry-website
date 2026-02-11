@@ -11,6 +11,10 @@ import os
 
 from inventory import Inventory
 
+import threading
+import time
+
+
 
 # Load environment variables
 load_dotenv()
@@ -26,7 +30,14 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 # Create Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-PAYMENT_BASE_URL = "https://paymentbackend.inxource.com/api/payment"
+
+
+LENCO_API_TOKEN = os.getenv("LENCO_API_TOKEN")
+LENCO_BASE_URL = os.getenv("LENCO_BASE_URL", "https://api.lenco.co/access/v2").rstrip("/")
+
+if not LENCO_API_TOKEN:
+    raise Exception("LENCO_API_TOKEN is not set in environment variables.")
+
 
 class Pay:
     def __init__(self):
@@ -47,80 +58,112 @@ class Pay:
 
         return response.json()
     """
+    # ---------------------------
+    # LENCO HELPERS
+    # ---------------------------
+    def get_operator(self, phone):
+        """
+        Match the TypeScript logic:
+        Airtel: (260|0)(97|77)
+        MTN:    (260|0)(96|76)
+        Zamtel: (260|0)(95|75)
+        """
+        import re
+        clean = re.sub(r"\D", "", phone or "")
+        if re.match(r"^(260|0)(97|77)", clean):
+            return "airtel"
+        if re.match(r"^(260|0)(96|76)", clean):
+            return "mtn"
+        if re.match(r"^(260|0)(95|75)", clean):
+            return "zamtel"
+        return ""
 
-    def get_payment_token(self, description, amount):
-        url = f"{PAYMENT_BASE_URL}/getToken"
+    def initiate_lenco_transaction(self, amount, phone_number, reference):
+        """
+        Sends STK Push to phone. This replaces TechPay token/link generation.
+        Endpoint pattern (because your LENCO_BASE_URL already includes /access/v2):
+            POST {LENCO_BASE_URL}/collections/mobile-money
+        """
+        operator = self.get_operator(phone_number)
+        if not operator:
+            raise Exception("Invalid or unsupported mobile network.")
+
+        endpoint = f"{LENCO_BASE_URL}/collections/mobile-money"
+
         payload = {
-            "description": description,
-            "amount": amount
+            "amount": float(amount),
+            "phone": phone_number,
+            "reference": reference,
+            "operator": operator,
+            "country": "zm",
+            "bearer": "merchant",
         }
-
-        response = requests.post(url, json=payload, timeout=30)
-
-        print("GET TOKEN STATUS:", response.status_code)
-        print("GET TOKEN RESPONSE:", response.text)
-
-        if response.status_code != 200:
-            raise Exception(f"Failed to get token: {response.text}")
-
-        return response.json()
-
-    def initiate_payment(self, token, phone_number, order_id):
-        url = f"{PAYMENT_BASE_URL}/initiatePayment"
 
         headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
+            "Authorization": f"Bearer {LENCO_API_TOKEN}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
         }
 
-        payload = {
-            "phoneNumber": phone_number,
-            "order_id": order_id
+        resp = requests.post(endpoint, json=payload, headers=headers, timeout=30)
+
+        # Helpful debug like your old code
+        print("LENCO INIT STATUS:", resp.status_code)
+        print("LENCO INIT RESPONSE:", resp.text)
+
+        if resp.status_code not in (200, 201):
+            raise Exception(f"Lenco initiate failed: {resp.text}")
+
+        return resp.json()
+
+    def check_lenco_status(self, reference_or_id):
+        """
+        Checks payment status.
+        GET {LENCO_BASE_URL}/collections/status/{referenceOrId}
+        """
+        endpoint = f"{LENCO_BASE_URL}/collections/status/{reference_or_id}"
+
+        headers = {
+            "Authorization": f"Bearer {LENCO_API_TOKEN}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
         }
 
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        resp = requests.get(endpoint, headers=headers, timeout=30)
 
-        if response.status_code != 200:
-            raise Exception(f"Payment initiation failed: {response.text}")
+        print("LENCO STATUS CHECK:", resp.status_code)
+        print("LENCO STATUS RESPONSE:", resp.text)
 
-        return response.json()
+        if resp.status_code != 200:
+            raise Exception(f"Lenco status check failed: {resp.text}")
 
+        return resp.json()
 
+    def map_lenco_to_payment_status(self, lenco_status_payload: dict) -> str:
+        data = (lenco_status_payload or {}).get("data") or {}
+        status = data.get("status")
+        settlement = data.get("settlementStatus")
+        reason = data.get("reasonForFailure")
 
-    def check_payment_status(self, order_token):
-        url = f"{PAYMENT_BASE_URL}/checkPayment"
+        # True final success
+        if settlement == "settled":
+            return "success"
 
-        payload = {
-            "orderToken": order_token
-        }
+        # If Lenco says failed
+        if status == "failed":
+            return "failed"
 
-        response = requests.post(url, json=payload, timeout=30)
+        # Practical handling for Airtel "pay-offline":
+        # If user has approved on phone, Lenco may stay "pay-offline" for a while.
+        # Treat as success if there's no failure reason.
+        if status == "pay-offline" and not reason:
+            return "success"
 
-        if response.status_code != 200:
-            raise Exception(f"Status check failed: {response.text}")
-
-        return response.json()
-
-    def process_payment(self, order_id, phone, amount):
-        token_data = self.get_payment_token(
-            description=f"Payment for order {order_id}",
-            amount=amount
-        )
-
-        data = token_data.get("data", {})
-        token = data.get("token")
-        payment_link = data.get("paymentLink")
-
-        if not token or not payment_link:
-            raise Exception(f"Invalid token response: {token_data}")
-
-        # OPTIONAL: initiate mobile money (only if you want STK push)
-        # self.initiate_payment(token, phone, order_id)
-
-        return {
-            "token": token,
-            "payment_link": payment_link
-        }
+        return "pending"
 
     def get_order_amount(self, order_id):
         """
@@ -192,37 +235,34 @@ class Pay:
             print("Payment notification error:", e)
             return None
 
-    def mark_order_paid(self, order_token, amount_paid):
+    def mark_order_paid(self, transaction_id, amount_paid=None):
         print("\n====== mark_order_paid START ======")
-        print("order_token:", order_token)
+        print("transaction_id:", transaction_id)
         print("amount_paid (from checkout/session):", amount_paid)
 
         try:
-            # 1️⃣ Fetch order first (idempotency check)
+            # 1) Fetch order (DON'T use .single() because it throws if 0 rows)
             print("Fetching order from DB...")
             existing_resp = (
                 self.supabase
                 .table("orders")
                 .select(
-                    "id,business_id,customer_id,total_amount,"
-                    "created_at,order_payment_status,products,partialAmountTotal"
+                    "id,business_id,customer_id,total_amount,created_at,"
+                    "order_payment_status,products,partialAmountTotal,transaction_id"
                 )
-                .eq("orderToken", order_token)
-                .single()
+                .eq("transaction_id", transaction_id)
                 .execute()
             )
 
-            if existing_resp is None:
-                print("❌ existing_resp is None")
-                return None
+            if not existing_resp or not existing_resp.data:
+                print("⚠️ Order not found yet -> likely not inserted yet. Skipping mark_paid for now.")
+                print("====== mark_order_paid END (NOT READY) ======\n")
+                return None  # IMPORTANT: caller should keep pending and try again
 
-            order = existing_resp.data
+            # If multiple rows somehow, just take the first
+            order = existing_resp.data[0]
+
             print("Order fetched:", order)
-
-            if not order:
-                print("❌ Order not found for token:", order_token)
-                return None
-
             print(
                 "BEFORE UPDATE ->",
                 "payment_status:", order.get("order_payment_status"),
@@ -230,57 +270,48 @@ class Pay:
                 "partialAmountTotal:", order.get("partialAmountTotal"),
             )
 
-            # 2️⃣ If already completed, exit (idempotency)
+            # 2) If already completed, exit (idempotency)
             if (order.get("order_payment_status") or "").lower() == "completed":
                 print("⚠️ Order already marked as completed. Skipping update.")
-                print("Existing partialAmountTotal:", order.get("partialAmountTotal"))
+                print("====== mark_order_paid END (ALREADY COMPLETED) ======\n")
                 return order
 
-            # 3️⃣ Decide what amount to save
+            # 3) Decide paid amount (YOU want total == partial always)
             paid_amount = amount_paid if amount_paid is not None else order.get("total_amount")
+            if paid_amount is None:
+                paid_amount = 0
+
             print("Paid amount that will be saved:", paid_amount)
 
-            # 4️⃣ Update order: mark paid + save partialAmountTotal
-            print("Updating order: setting payment_status=completed and partialAmountTotal...")
-            response = (
+            # 4) Update order (NO .select() chaining after update)
+            print(
+                "Updating order: setting order_payment_status=completed, order_status=confirmed, total_amount & partialAmountTotal...")
+            update_resp = (
                 self.supabase
                 .table("orders")
                 .update({
                     "order_payment_status": "completed",
                     "order_status": "confirmed",
-                    "partialAmountTotal": paid_amount
+                    # force your rule: total_amount == partialAmountTotal
+                    "total_amount": paid_amount,
+                    "partialAmountTotal": paid_amount,
                 })
-                .eq("orderToken", order_token)
-                .select(
-                    "id,business_id,customer_id,total_amount,"
-                    "created_at,order_payment_status,products,partialAmountTotal"
-                )
-                .single()
+                .eq("id", order["id"])  # update by id (safer than transaction_id)
                 .execute()
             )
 
-            if response is None:
-                print("❌ Update response is None")
+            if not update_resp or not update_resp.data:
+                print("❌ Update failed or returned no data.")
+                print("====== mark_order_paid END (ERROR) ======\n")
                 return None
 
-            order = response.data
-            print("Order AFTER UPDATE:", order)
+            updated_order = update_resp.data[0]
+            print("Order AFTER UPDATE:", updated_order)
 
-            if not order:
-                print("❌ Update returned no order data")
-                return None
-
-            print(
-                "AFTER UPDATE ->",
-                "payment_status:", order.get("order_payment_status"),
-                "total_amount:", order.get("total_amount"),
-                "partialAmountTotal:", order.get("partialAmountTotal"),
-            )
-
-            # 5️⃣ Reduce stock
+            # 5) Reduce stock (if products exist)
             print("Starting stock deduction...")
             inventory = Inventory()
-            products = order.get("products") or []
+            products = updated_order.get("products") or []
 
             try:
                 for item in products:
@@ -294,22 +325,22 @@ class Pay:
 
             except Exception as stock_err:
                 print("❌ Stock deduction failed:", stock_err)
-
                 print("Flagging order as stock_issue...")
                 self.supabase.table("orders").update({
                     "order_status": "stock_issue"
-                }).eq("orderToken", order_token).execute()
+                }).eq("id", updated_order["id"]).execute()
 
-                return order  # Paid but needs manual review
+                print("====== mark_order_paid END (PAID BUT STOCK ISSUE) ======\n")
+                return updated_order
 
-            # 6️⃣ Continue normal flow
+            # 6) Continue normal flow
             print("Sending notifications, receipt, and email...")
-            self.notify_business_payment_received(order["id"])
-            self.create_receipt(order)
-            self.send_receipt_email(order)
+            self.notify_business_payment_received(updated_order["id"])
+            self.create_receipt(updated_order)
+            self.send_receipt_email(updated_order)
 
             print("====== mark_order_paid END (SUCCESS) ======\n")
-            return order
+            return updated_order
 
         except Exception as e:
             print("❌ mark_order_paid FAILED with exception:", e)

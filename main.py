@@ -10,6 +10,8 @@ from checkout import Checkout
 from pay import Pay
 from inventory import Inventory
 import uuid
+import threading
+import time
 
 
 cart = Cart()
@@ -260,6 +262,92 @@ def payout():
         print("Payout route error:", e)
         return redirect(url_for("checkout"))
 
+#  helper function for process payment
+def poll_lenco_and_finalize(reference, checkout_payload):
+    """
+    Background polling: if settled -> create order + attach items + upload images + notify.
+    """
+    checkout = Checkout()
+    pay_tool = Pay()
+
+    max_attempts = 60
+    interval_sec = 5
+
+    for attempt in range(max_attempts):
+        time.sleep(interval_sec)
+
+        try:
+            status_payload = pay_tool.check_lenco_status(reference)
+            payment_status = pay_tool.map_lenco_to_payment_status(status_payload)
+
+            print(f"[LENCO POLL] Attempt {attempt+1}/{max_attempts} Ref={reference} Status={payment_status}")
+
+            if payment_status == "success":
+                # Create the order ONLY NOW (settled)
+                customer_id = checkout_payload["customer_id"]
+                delivery_location = checkout_payload.get("delivery_location", "")
+                total_amount = checkout_payload["total_amount"]
+                cart_snapshot = checkout_payload["cart_snapshot"]
+
+                # 1) Create order (token = Lenco reference)
+                order = checkout.create_order(
+                    customer_id=customer_id,
+                    delivery_location=delivery_location,
+                    total_amount=total_amount,
+                    order_token=reference,
+                    partial_amount_total=total_amount  # always equal
+                )
+
+                if not order:
+                    print("[LENCO POLL] Failed to create order in DB.")
+                    return
+
+                order_id = order["id"]
+                print("[LENCO POLL] Order created:", order_id)
+
+                # 2) Prepare products for notification + upload/attach
+                products_for_notification = []
+                cart_items = []
+
+                for item in cart_snapshot:
+                    products_for_notification.append({
+                        "product_id": item["product_id"],
+                        "name": item["name"],
+                        "price": item["price"],
+                        "quantity": item["quantity"],
+                        "specialInstructions": item.get("instruction"),
+                    })
+
+                    cart_items.append({
+                        "product_id": item["product_id"],
+                        "quantity": item["quantity"],
+                        "specialInstructions": item.get("instruction"),
+                        "local_image_path": item.get("local_image_path")
+                    })
+
+                # 3) Create notification
+                checkout.create_order_notification(
+                    user_id=customer_id,
+                    business_id=checkout.business_id,
+                    order_id=order_id,
+                    products=products_for_notification,
+                    ordered_at=order["created_at"]
+                )
+
+                # 4) Upload images + attach products json
+                products_json = checkout.upload_order_images(order_id=order_id, cart_items=cart_items)
+                checkout.attach_products_to_order(order_id=order_id, products_json=products_json)
+
+                print("[LENCO POLL] Finalized order successfully.")
+                return
+
+            # if failed/pending -> keep polling until timeout (TS behavior)
+
+        except Exception as e:
+            print("[LENCO POLL] Polling error:", e)
+
+    print("[LENCO POLL] TIMEOUT: Payment not settled within window.")
+
 
 
 @app.route('/process-payment', methods=['POST'])
@@ -279,16 +367,12 @@ def process_payment():
         customer_id = session["customer_id"]
         delivery_location = session.get("delivery_location", "")
 
-        # -------------------------------
-        # 1. CALCULATE TOTAL
-        # -------------------------------
+        # 1) TOTAL (and partial = total always)
         total_amount = cart.accumulated_total
         session["total_amount"] = total_amount
-        print("DEBUG total_amount calculated:", total_amount)
+        print("DEBUG total_amount:", total_amount)
 
-        # -------------------------------
-        # STOCK CHECK (BEFORE PAYMENT)
-        # -------------------------------
+        # 2) STOCK CHECK (same as before)
         inventory = Inventory()
         insufficient = []
 
@@ -306,128 +390,56 @@ def process_payment():
 
         if insufficient:
             session["stock_error"] = insufficient
-            print("DEBUG stock insufficient:", insufficient)
             return redirect(url_for("checkout"))
 
-        # -------------------------------
-        # 2. TRY TECHPAY TOKEN FIRST (WITH FALLBACK)
-        # -------------------------------
-        payment_link = None
-        token = None
-        fallback_to_store = False
+        # 3) Snapshot cart for background finalize (important!)
+        cart_snapshot = [dict(x) for x in cart.items]
 
-        try:
-            payment = pay_tool.process_payment(
-                order_id="TEMP",
-                phone=phone,
-                amount=total_amount
-            )
-            print("DEBUG process-payment payment response:", payment)
-
-            token = payment.get("token")
-            payment_link = payment.get("payment_link")
-
-            if not token or not payment_link:
-                raise Exception(f"TechPay response missing token/payment_link: {payment}")
-
-
-        except Exception as e:
-            # TechPay down → fallback to pending pay-at-store order
-            print("TechPay failed, falling back to pay-at-store:", e)
-            fallback_to_store = True
-            token = f"STORE-{uuid.uuid4().hex[:10].upper()}"  # local token for tracking
-
-        # -------------------------------
-        # 3. CREATE ORDER (NO PRODUCTS YET)
-        # partialAmountTotal = total_amount
-        # -------------------------------
-        order = checkout.create_order(
-            customer_id=customer_id,
-            delivery_location=delivery_location,
-            total_amount=total_amount,
-            order_token=token,
-            partial_amount_total=total_amount
+        # 4) Initiate LENCO STK PUSH (reference can be uuid)
+        reference_seed = uuid.uuid4().hex  # reference we send to Lenco
+        init_payload = pay_tool.initiate_lenco_transaction(
+            amount=total_amount,
+            phone_number=phone,
+            reference=reference_seed
         )
 
-        if not order:
-            return redirect(url_for("checkout"))
+        if init_payload.get("status") is not True:
+            print("LENCO rejected request:", init_payload)
+            return redirect(url_for("payout"))
 
-        order_id = order["id"]
-        print("DEBUG created order_id:", order_id)
+        # Lenco returns its own reference in data.reference (as in TS)
+        lenco_reference = (init_payload.get("data") or {}).get("reference") or reference_seed
 
-        # -------------------------------
-        # 4. PREPARE PRODUCTS (TS SHAPE)
-        # IMPORTANT: includes name + price
-        # -------------------------------
-        products_for_notification = []
-        cart_items = []
+        # 5) Store reference in session so /check-payment-status can verify later
+        session["transaction_id"] = lenco_reference
 
-        for item in cart.items:
-            products_for_notification.append({
-                "product_id": item["product_id"],
-                "name": item["name"],
-                "price": item["price"],
-                "quantity": item["quantity"],
-                "specialInstructions": item.get("instruction"),
-            })
+        # 6) Start background polling -> finalize order ONLY when settled
+        checkout_payload = {
+            "customer_id": customer_id,
+            "delivery_location": delivery_location,
+            "total_amount": total_amount,
+            "cart_snapshot": cart_snapshot
+        }
 
-            cart_items.append({
-                "product_id": item["product_id"],
-                "quantity": item["quantity"],
-                "specialInstructions": item.get("instruction"),
-                "local_image_path": item.get("local_image_path")
-            })
-
-        # -------------------------------
-        # 5. CREATE ORDER NOTIFICATION
-        # -------------------------------
-        checkout.create_order_notification(
-            user_id=customer_id,
-            business_id=checkout.business_id,
-            order_id=order_id,
-            products=products_for_notification,
-            ordered_at=order["created_at"]
+        t = threading.Thread(
+            target=poll_lenco_and_finalize,
+            args=(lenco_reference, checkout_payload),
+            daemon=True
         )
+        t.start()
 
-        # -------------------------------
-        # 6. UPLOAD IMAGES + ATTACH PRODUCTS
-        # -------------------------------
-        products_json = checkout.upload_order_images(
-            order_id=order_id,
-            cart_items=cart_items
-        )
-
-        checkout.attach_products_to_order(
-            order_id=order_id,
-            products_json=products_json
-        )
-
-        # -------------------------------
-        # 7. SAVE SESSION
-        # -------------------------------
-        session["order_id"] = order_id
-        session["transaction_id"] = token
-
-        # -------------------------------
-        # 8. CLEAR CART
-        # -------------------------------
+        # 7) Clear cart immediately (prevents duplicate submits)
         cart.items = []
         cart.accumulated_total = 0
 
-        # -------------------------------
-        # 9. REDIRECT
-        # -------------------------------
-        if fallback_to_store:
-            # TechPay failed → order saved as pending, customer pays at store
-            return redirect(url_for("pay_at_store_success"))
+        # 8) Redirect user back to payout (we’ll use /check-payment-status to confirm)
+        return redirect(url_for("payment_pending"))
 
-
-        # TechPay OK → send them to payment link
-        return redirect(payment_link)
 
     except Exception as e:
-        print("Payment processing error:", e)
-        return redirect(url_for("payout"))
+        print("Lenco process-payment error:", e)
+        return redirect(url_for("payment_pending"))
+
 
 
 
@@ -516,68 +528,92 @@ def place_order_pay_at_store():
 
 @app.route("/payment-confirmation", methods=["POST"])
 def payment_confirmation():
-    data = request.json or {}
-
-    order_token = data.get("order_token")
-    payment_status = data.get("status")
-
-    if not order_token or payment_status != "SUCCESS":
-        return jsonify({"error": "Invalid confirmation"}), 400
-
-    pay_tool = Pay()
-
-    updated = pay_tool.mark_order_paid(order_token)
-
-    if not updated:
-        return jsonify({"error": "Order update failed"}), 500
-
-    return jsonify({"message": "Order confirmed"}), 200
+    """
+    DISABLED:
+    This endpoint was used for the old TechPay confirmation flow.
+    We now use Lenco (STK push + polling + settlementStatus).
+    """
+    return jsonify({
+        "success": False,
+        "message": "This endpoint is disabled. Payments are handled via Lenco."
+    }), 410
 
 
 @app.route("/check-payment-status")
 def check_payment_status():
-    order_token = session.get("transaction_id")
-
-    if not order_token:
+    reference = session.get("transaction_id")
+    if not reference:
         return redirect(url_for("checkout"))
 
     pay_tool = Pay()
 
-    status = pay_tool.check_payment_status(order_token)
+    try:
+        status_payload = pay_tool.check_lenco_status(reference)
+        payment_status = pay_tool.map_lenco_to_payment_status(status_payload)
 
-    if status.get("status") == "SUCCESS":
-        pay_tool.mark_order_paid(order_token)
-        return redirect(url_for("paid"))
+        data = (status_payload or {}).get("data") or {}
+        amount_str = data.get("amount")  # usually like "1.00"
+        try:
+            amount_paid = float(amount_str) if amount_str is not None else None
+        except Exception:
+            amount_paid = None
 
-    return redirect(url_for("payout"))
+        # ✅ SUCCESS
+        if payment_status == "success":
+            # 1) Mark the order as paid in Supabase (updates order_payment_status -> completed)
+            updated_order = pay_tool.mark_order_paid(reference, amount_paid=amount_paid)
+
+            # 2) Use updated order id for the /paid page
+            if updated_order and updated_order.get("id"):
+                session["order_id"] = updated_order["id"]
+                session.pop("transaction_id", None)
+                return redirect(url_for("paid"))
+
+            # Fallback: try to fetch it (rare)
+            checkout = Checkout()
+            order = checkout.get_order_by_token(reference)
+            if order:
+                session["order_id"] = order["id"]
+                session.pop("transaction_id", None)
+                return redirect(url_for("paid"))
+
+            # Rare race condition
+            return render_template("payment_pending.html")
+
+        # ❌ FAILED
+        if payment_status == "failed":
+            session.pop("transaction_id", None)
+            return render_template("payment_pending.html", payment_failed=True)
+
+        # ⏳ PENDING
+        return render_template("payment_pending.html")
+
+    except Exception as e:
+        print("check-payment-status error:", e)
+        return render_template("payment_pending.html")
+
+
+
 
 @app.route("/payment/status/<order_number>")
 def payment_status(order_number):
     """
-    TechPay redirects here after payment.
-    Example:
-    /payment/status/329264?token=C6C19B25&status=COMPLETE
+    DISABLED:
+    This endpoint was used for old TechPay redirect callbacks like:
+    /payment/status/123?token=XXXX&status=COMPLETE
+
+    We now use Lenco (STK push + polling + settlementStatus).
     """
-    token = request.args.get("token")
-    status = request.args.get("status")
-
-    print("PAYMENT RETURN HIT:", {"order_number": order_number, "token": token, "status": status})
-
-    # Only mark paid if TechPay says it's complete/success
-    if token and status and status.upper() in ("COMPLETE", "SUCCESS", "PAID"):
-        pay_tool = Pay()
-        updated_order = pay_tool.mark_order_paid(token)  # updates by orderToken :contentReference[oaicite:1]{index=1}
-        print("PAYMENT UPDATE RESULT:", updated_order)
-
-        # If update worked, show paid page
-        if updated_order:
-            session["order_id"] = updated_order["id"]  # so /paid can work :contentReference[oaicite:2]{index=2}
-            return redirect(url_for("paid"))
-
-    # If failed / cancelled, go back to payout
     return redirect(url_for("payout"))
 
 
+@app.route("/payment-pending")
+def payment_pending():
+    if not session.get("transaction_id"):
+        return redirect(url_for("checkout"))
+
+    # Reuse your existing backend checker
+    return redirect(url_for("check_payment_status"))
 
 
 
@@ -608,6 +644,8 @@ def pay_at_store_success():
     session.pop("order_id", None)
     session.pop("checkout_phone", None)
     session.pop("customer_id", None)
+
+
 
     return render_template('pay_at_store.html')
 
