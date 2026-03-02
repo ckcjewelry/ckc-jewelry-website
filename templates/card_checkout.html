@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% set hide_cart = true %}
+
+{% block title %}Card Checkout · CKC Jewelry Zambia{% endblock %}
+
+{% block extra_css %}
+<style>
+.checkout {
+    padding: 40px 20px;
+    max-width: 1100px;
+    margin: auto;
+}
+
+.checkout h2 {
+    font-family: 'Playfair Display', serif;
+    color: var(--gold);
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+/* Layout */
+.checkout-grid {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    gap: 30px;
+}
+
+/* Form Box */
+.form-box {
+    background: #0e0e0e;
+    border: 1px solid rgba(201,162,77,0.15);
+    border-radius: 14px;
+    padding: 20px;
+}
+
+.form-box h3 {
+    font-size: 15px;
+    margin-bottom: 14px;
+    color: var(--gold);
+}
+
+/* Inputs */
+.form-grid { display: grid; gap: 12px; }
+
+.field label {
+    display: block;
+    font-size: 12px;
+    color: rgba(255,255,255,0.75);
+    margin-bottom: 6px;
+}
+
+.field input {
+    width: 100%;
+    background: #000;
+    border: 1px solid rgba(201,162,77,0.3);
+    color: #fff;
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.row-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+}
+
+/* Summary */
+.summary-box {
+    background: #0e0e0e;
+    border: 1px solid rgba(201,162,77,0.15);
+    border-radius: 14px;
+    padding: 20px;
+    height: fit-content;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.summary-total {
+    font-weight: 600;
+    color: var(--gold);
+    border-top: 1px solid rgba(201,162,77,0.2);
+    padding-top: 14px;
+}
+
+/* Buttons */
+.pay-btn {
+    width: 100%;
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--gold);
+    color: #000;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.pay-btn-outline {
+    width: 100%;
+    margin-top: 12px;
+    padding: 14px;
+    background: transparent;
+    border: 1px solid rgba(201,162,77,0.7);
+    color: var(--gold);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.pay-btn-outline:hover {
+    background: var(--gold);
+    color: #000;
+}
+
+@media (max-width: 900px) {
+    .checkout-grid { grid-template-columns: 1fr; }
+    .row-2, .row-3 { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+
+{% block content %}
+<section class="checkout">
+<h2>Pay by Card</h2>
+
+<form method="POST" action="{{ url_for('process_card_payment') }}">
+
+<div class="checkout-grid">
+
+<!-- LEFT SIDE -->
+<div class="form-box">
+
+<h3>Card Details</h3>
+
+<input type="hidden" name="reference" value="{{ reference }}">
+
+<div class="form-grid">
+
+<div class="field">
+<label>Card Number</label>
+<input type="text" name="card_number" required placeholder="1234 5678 9012 3456">
+</div>
+
+<div class="row-3">
+<div class="field">
+<label>Expiry Month</label>
+<input type="text" name="expiry_month" placeholder="MM" required>
+</div>
+
+<div class="field">
+<label>Expiry Year</label>
+<input type="text" name="expiry_year" placeholder="YYYY" required>
+</div>
+
+<div class="field">
+<label>CVV</label>
+<input type="password" name="cvv" placeholder="***" required>
+</div>
+</div>
+
+<div class="row-2">
+<div class="field">
+<label>First Name</label>
+<input type="text" name="first_name" required>
+</div>
+
+<div class="field">
+<label>Last Name</label>
+<input type="text" name="last_name" required>
+</div>
+</div>
+
+<div class="row-2">
+<div class="field">
+<label>Email</label>
+<input type="email" name="email" required>
+</div>
+
+<div class="field">
+<label>Phone Number</label>
+<input type="tel" name="phone" required>
+</div>
+</div>
+
+<h3 style="margin-top:20px;">Billing Address</h3>
+
+<div class="field">
+<label>Street Address</label>
+<input type="text" name="street_address" required>
+</div>
+
+<div class="row-2">
+<div class="field">
+<label>City</label>
+<input type="text" name="city" required>
+</div>
+
+<div class="field">
+<label>State (optional)</label>
+<input type="text" name="state">
+</div>
+</div>
+
+<div class="row-2">
+<div class="field">
+<label>Postal Code</label>
+<input type="text" name="postal_code" required>
+</div>
+
+<div class="field">
+<label>Country (2-letter code)</label>
+<input type="text" name="country" value="ZM" required>
+</div>
+</div>
+
+</div>
+</div>
+
+<!-- RIGHT SIDE -->
+<div class="summary-box">
+
+<div class="summary-row">
+<span>Items ({{ cart_count }})</span>
+<span>ZMW {{ "%.2f"|format(cart_total) }}</span>
+</div>
+
+<div class="summary-row summary-total">
+<span>Total</span>
+<span>ZMW {{ "%.2f"|format(cart_total) }}</span>
+</div>
+
+<button type="submit" class="pay-btn">
+Pay Now
+</button>
+
+<a href="{{ url_for('checkout') }}">
+<button type="button" class="pay-btn-outline">
+Back to Checkout
+</button>
+</a>
+
+</div>
+
+</div>
+</form>
+</section>
+{% endblock %}

@@ -91,7 +91,8 @@ class Inventory:
                 .update({"quantity": new_qty})
                 .eq("business_id", self.business_id)
                 .eq("product_id", product_id)
-                .eq("quantity", current_qty)   # key line: prevents race
+                .eq("quantity", current_qty)
+                .select("quantity")  # 🔥 THIS FIXES EVERYTHING
                 .execute()
             )
 

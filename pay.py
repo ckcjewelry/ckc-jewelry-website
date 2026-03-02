@@ -3,6 +3,11 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+import json
+
+from jwcrypto import jwk, jwe
+
+
 from typing import Optional\
 
 from supabase import create_client, Client
@@ -147,22 +152,19 @@ class Pay:
         data = (lenco_status_payload or {}).get("data") or {}
         status = data.get("status")
         settlement = data.get("settlementStatus")
-        reason = data.get("reasonForFailure")
 
-        # True final success
+        # TRUE FINAL SUCCESS
         if settlement == "settled":
             return "success"
 
-        # If Lenco says failed
+        if status == "successful":
+            return "success"
+
+        # FAILED
         if status == "failed":
             return "failed"
 
-        # Practical handling for Airtel "pay-offline":
-        # If user has approved on phone, Lenco may stay "pay-offline" for a while.
-        # Treat as success if there's no failure reason.
-        if status == "pay-offline" and not reason:
-            return "success"
-
+        # Everything else is still pending
         return "pending"
 
     def get_order_amount(self, order_id):
@@ -418,3 +420,133 @@ class Pay:
             return None
 
 
+    # ---------------------------
+    # LENCO CARD (JWE ENCRYPTION)
+    # ---------------------------
+    def get_lenco_encryption_key(self) -> dict:
+        """
+        GET {LENCO_BASE_URL}/encryption-key
+        Returns RSA public key in JWK format.
+        NOTE: Lenco says key can change anytime; don't cache long-term.
+        """
+        endpoint = f"{LENCO_BASE_URL}/encryption-key"
+        headers = {
+            "Authorization": f"Bearer {LENCO_API_TOKEN}",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+        resp = requests.get(endpoint, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            raise Exception(f"Failed to get Lenco encryption key: {resp.text}")
+
+        data = resp.json()
+        # Most APIs return something like {"status": true, "data": {...jwk...}}
+        jwk_data = data.get("data") if isinstance(data, dict) else None
+        if not jwk_data:
+            # fallback if API returns the jwk directly
+            jwk_data = data
+
+        if not isinstance(jwk_data, dict) or not jwk_data.get("n") or not jwk_data.get("e"):
+            raise Exception(f"Invalid encryption key response: {data}")
+
+        return jwk_data
+
+    def encrypt_lenco_payload(self, payload: dict, jwk_data: dict) -> str:
+        """
+        Encrypts payload as JWE Compact Serialization using:
+        - alg: RSA-OAEP-256
+        - enc: A256GCM
+        - cty: application/json
+        - kid: jwk_data['kid']
+        """
+        # Prepare JWK public key
+        public_key = jwk.JWK(**jwk_data)
+
+        protected_header = {
+            "alg": "RSA-OAEP-256",
+            "enc": "A256GCM",
+            "cty": "application/json",
+            "kid": jwk_data.get("kid"),
+        }
+
+        plaintext = json.dumps(payload).encode("utf-8")
+
+        token = jwe.JWE(plaintext, protected=protected_header)
+        token.add_recipient(public_key)
+
+        # Compact serialization string
+        return token.serialize(compact=True)
+
+    def initiate_lenco_card_transaction(
+        self,
+        amount: float,
+        reference: str,
+        email: str,
+        first_name: str,
+        last_name: str,
+        billing: dict,
+        card: dict,
+        currency: str = "ZMW",
+        bearer: str = "merchant",
+        redirect_url: str | None = None,
+    ) -> dict:
+        """
+        POST {LENCO_BASE_URL}/collections/card
+        Body: {"encryptedPayload": "<JWE>"}
+
+        billing must contain:
+          streetAddress, city, postalCode, country (2-letter)
+          state optional
+
+        card must contain:
+          number, cvv, expiryMonth, expiryYear
+        """
+        endpoint = f"{LENCO_BASE_URL}/collections/card"
+
+        # Build plaintext payload (THIS MUST BE ENCRYPTED)
+        plaintext_payload = {
+            "reference": reference,
+            "email": email,
+            "amount": str(float(amount)),
+            "currency": currency,
+            "bearer": bearer,
+            "customer": {
+                "firstName": first_name,
+                "lastName": last_name,
+            },
+            "billing": billing,
+            "card": card,
+        }
+
+        if redirect_url:
+            plaintext_payload["redirectUrl"] = redirect_url
+
+        jwk_data = self.get_lenco_encryption_key()
+        encrypted = self.encrypt_lenco_payload(plaintext_payload, jwk_data)
+
+        headers = {
+            "Authorization": f"Bearer {LENCO_API_TOKEN}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+        resp = requests.post(
+            endpoint,
+            json={"encryptedPayload": encrypted},
+            headers=headers,
+            timeout=30,
+        )
+
+        # Don’t print sensitive info (no card data here anyway)
+        print("LENCO CARD INIT STATUS:", resp.status_code)
+        print("LENCO CARD INIT RESPONSE:", resp.text)
+
+        if resp.status_code not in (200, 201):
+            raise Exception(f"Lenco card initiate failed: {resp.text}")
+
+        return resp.json()

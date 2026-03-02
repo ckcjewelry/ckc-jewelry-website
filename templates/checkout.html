@@ -193,11 +193,33 @@
     cursor: pointer;
 }
 
+
+.pay-actions{
+    display: grid;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.pay-btn-outline{
+    background: transparent;
+    border: 1px solid rgba(201,162,77,0.7);
+    color: var(--gold);
+}
+
+.pay-btn-outline:hover{
+    background: var(--gold);
+    color: #000;
+}
+
+
 @media (max-width: 900px) {
     .checkout-grid {
         grid-template-columns: 1fr;
     }
 }
+
+
+
 </style>
 {% endblock %}
 
@@ -275,7 +297,16 @@
         </span>
     </div>
 
-    <button type="submit" class="pay-btn">Pay Now</button>
+    <div class="pay-actions">
+      <button type="submit" class="pay-btn" name="payment_method" value="mobile">
+        Pay by Mobile Money
+      </button>
+
+      <button type="submit" class="pay-btn pay-btn-outline" name="payment_method" value="card">
+        Use Card
+      </button>
+    </div>
+
 </div>
 
 </div>

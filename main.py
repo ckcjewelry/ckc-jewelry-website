@@ -216,6 +216,13 @@ def pay_now():
         if result["exists"]:
             # Existing customer
             session["customer_id"] = result["customer"]["id"]
+
+            payment_method = request.form.get("payment_method", "mobile_money")
+            session["payment_method"] = payment_method
+
+            if payment_method == "card":
+                return redirect(url_for("card_checkout"))
+
             return redirect(url_for("payout"))
 
         # New customer → continue to customer form
@@ -261,6 +268,8 @@ def payout():
     except Exception as e:
         print("Payout route error:", e)
         return redirect(url_for("checkout"))
+
+
 
 #  helper function for process payment
 def poll_lenco_and_finalize(reference, checkout_payload):
@@ -440,6 +449,145 @@ def process_payment():
         print("Lenco process-payment error:", e)
         return redirect(url_for("payment_pending"))
 
+
+
+@app.route("/process-card-payment", methods=["POST"])
+def process_card_payment():
+    if not session.get("customer_id"):
+        return redirect(url_for("checkout"))
+
+    if not cart.items:
+        return redirect(url_for("checkout"))
+
+    checkout = Checkout()
+    pay_tool = Pay()
+
+    try:
+        customer_id = session["customer_id"]
+        delivery_location = session.get("delivery_location", "")
+        total_amount = cart.accumulated_total
+        session["total_amount"] = total_amount
+
+        cart_snapshot = [dict(x) for x in cart.items]
+
+        # form fields
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+
+        street = request.form.get("street_address", "").strip()
+        city = request.form.get("city", "").strip()
+        state = request.form.get("state", "").strip()
+        postal = request.form.get("postal_code", "").strip()
+        country = request.form.get("country", "ZM").strip().upper()
+
+        card_number = request.form.get("card_number", "").strip().replace(" ", "")
+        cvv = request.form.get("cvv", "").strip()
+        expiry_month = request.form.get("expiry_month", "").strip()
+        expiry_year = request.form.get("expiry_year", "").strip()
+
+        # keep phone in session like mobile-money flow expects
+        session["checkout_phone"] = phone
+
+        reference = request.form.get("reference") or uuid.uuid4().hex
+
+        billing = {
+            "streetAddress": street,
+            "city": city,
+            "postalCode": postal,
+            "country": country,
+        }
+        if state:
+            billing["state"] = state
+
+        card = {
+            "number": card_number,
+            "cvv": cvv,
+            "expiryMonth": expiry_month,
+            "expiryYear": expiry_year,
+        }
+
+        init_payload = pay_tool.initiate_lenco_card_transaction(
+            amount=total_amount,
+            reference=reference,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            billing=billing,
+            card=card,
+            redirect_url=url_for("verify_card_payment", _external=True),
+        )
+
+        if init_payload.get("status") is not True:
+            print("LENCO card rejected request:", init_payload)
+            return redirect(url_for("card_checkout"))
+
+        data = init_payload.get("data") or {}
+        lenco_reference = data.get("reference") or reference
+        status = data.get("status")
+
+        session["transaction_id"] = lenco_reference
+
+        checkout_payload = {
+            "customer_id": customer_id,
+            "delivery_location": delivery_location,
+            "total_amount": total_amount,
+            "cart_snapshot": cart_snapshot
+        }
+
+        t = threading.Thread(
+            target=poll_lenco_and_finalize,
+            args=(lenco_reference, checkout_payload),
+            daemon=True
+        )
+        t.start()
+
+        # clear cart to prevent duplicates
+        cart.items = []
+        cart.accumulated_total = 0
+
+        # if 3DS required, redirect
+        meta = init_payload.get("meta") or {}
+        auth = meta.get("authorization") or {}
+        redirect_3ds = auth.get("redirect")
+        if status == "3ds-auth-required" and redirect_3ds:
+            return redirect(redirect_3ds)
+
+        return redirect(url_for("payment_pending"))
+
+    except Exception as e:
+        print("process_card_payment error:", e)
+        return redirect(url_for("card_checkout"))
+
+
+
+@app.route("/verify-card-payment")
+def verify_card_payment():
+    reference = request.args.get("reference") or request.args.get("lencoReference")
+    if reference:
+        session["transaction_id"] = reference
+    return redirect(url_for("payment_pending"))
+
+
+
+@app.route("/card-checkout")
+def card_checkout():
+    if not session.get("customer_id"):
+        return redirect(url_for("checkout"))
+
+    if not cart.items:
+        return redirect(url_for("checkout"))
+
+    number_of_items = sum((item.get("quantity") or 0) for item in cart.items)
+    accumulated_total = cart.accumulated_total
+
+    return render_template(
+        "card_checkout.html",
+        cart_total=accumulated_total,
+        cart_count=number_of_items,
+        reference=uuid.uuid4().hex
+    )
 
 
 
